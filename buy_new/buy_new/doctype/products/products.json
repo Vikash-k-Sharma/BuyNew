@@ -1,0 +1,146 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 1,
+ "allow_rename": 1,
+ "autoname": "Products-.#####",
+ "creation": "2026-11-04 14:03:34.814360",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "basic_product_information_tab",
+  "products_name",
+  "products_code",
+  "brand",
+  "category",
+  "description",
+  "short_description",
+  "product_image",
+  "pricing_information_tab",
+  "selling_price",
+  "mrp",
+  "discount_percentage",
+  "cost_price",
+  "tax_rate",
+  "stock_information_tab",
+  "stock_quantity",
+  "stock_status"
+ ],
+ "fields": [
+  {
+   "fieldname": "products_name",
+   "fieldtype": "Data",
+   "label": "Products Name"
+  },
+  {
+   "fieldname": "products_code",
+   "fieldtype": "Data",
+   "label": "Products Code"
+  },
+  {
+   "fieldname": "brand",
+   "fieldtype": "Data",
+   "label": "Brand"
+  },
+  {
+   "fieldname": "category",
+   "fieldtype": "Link",
+   "label": "Category",
+   "options": "Product Category"
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Text Editor",
+   "label": "Description"
+  },
+  {
+   "fieldname": "short_description",
+   "fieldtype": "Small Text",
+   "label": "Short Description"
+  },
+  {
+   "fieldname": "product_image",
+   "fieldtype": "Attach Image",
+   "label": "Product Image"
+  },
+  {
+   "fieldname": "basic_product_information_tab",
+   "fieldtype": "Tab Break",
+   "label": "Product Information"
+  },
+  {
+   "fieldname": "pricing_information_tab",
+   "fieldtype": "Tab Break",
+   "label": "Pricing Information"
+  },
+  {
+   "fieldname": "selling_price",
+   "fieldtype": "Currency",
+   "label": "Selling Price"
+  },
+  {
+   "fieldname": "mrp",
+   "fieldtype": "Currency",
+   "label": "MRP"
+  },
+  {
+   "fieldname": "discount_percentage",
+   "fieldtype": "Percent",
+   "label": "Discount Percentage"
+  },
+  {
+   "fieldname": "cost_price",
+   "fieldtype": "Currency",
+   "label": "Cost Price"
+  },
+  {
+   "fieldname": "tax_rate",
+   "fieldtype": "Percent",
+   "label": "Tax Rate"
+  },
+  {
+   "fieldname": "stock_information_tab",
+   "fieldtype": "Tab Break",
+   "label": "Stock Information"
+  },
+  {
+   "fieldname": "stock_quantity",
+   "fieldtype": "Int",
+   "label": "Stock Quantity",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "stock_status",
+   "fieldtype": "Select",
+   "label": "Stock Status",
+   "options": "In Stock\nOut of Stock\nLow Stock"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-11-04 14:39:27.259307",
+ "modified_by": "Administrator",
+ "module": "Buy New",
+ "name": "Products",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

@@ -272,3 +272,33 @@ app_license = "mit"
 # List of apps whose translatable strings should be excluded from this app's translations.
 # ignore_translatable_strings_from = []
 
+website_route_rules = [
+    {
+        "from_route": "/home",
+        "to_route": "index"
+    },
+    {
+        "from_route": "/products",
+        "to_route": "index"
+    },
+    {
+        "from_route": "/cart",
+        "to_route": "index"
+    },
+    {
+        "from_route": "/login",
+        "to_route": "index"
+    },
+    {
+        "from_route": "/register",
+        "to_route": "index"
+    },
+    {
+        "from_route": "/checkout",
+        "to_route": "index"
+    },
+    {
+        "from_route": "/my-orders",
+        "to_route": "index"
+    }
+]

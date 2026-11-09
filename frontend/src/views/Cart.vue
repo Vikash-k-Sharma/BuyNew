@@ -5,7 +5,7 @@
 
             <!-- Page Heading -->
             <h1 class="mb-5 text-xl font-bold text-gray-800 sm:text-2xl">
-                My Shopping Cart
+                jhebubct
                 <span class="text-sm font-normal text-gray-500">
                     ({{ totalItems }} Items)
                 </span>
@@ -134,7 +134,7 @@
                                 Save for later
                             </button>
 
-                            <button
+                            <button @click="removeItem(item)"
                                 class="border-x border-gray-200 px-2 py-4 text-xs font-semibold text-gray-600 transition hover:text-red-600 sm:text-sm">
                                 <i class="far fa-trash-alt mr-1 sm:mr-2"></i>
                                 Remove

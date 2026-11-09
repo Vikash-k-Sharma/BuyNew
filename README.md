@@ -2,6 +2,13 @@
 
 online shopping platform
 
+### Frontend development
+
+The Vue frontend is served by Frappe from `buy_new/public/frontend`. Run the
+bench processes with `bench start`; its `frontend` process builds the Vue app
+and watches for changes. After editing a Vue file, refresh the page to load the
+new bundle. Python changes are reloaded by Frappe's development server.
+
 ### Installation
 
 You can install this app using the [bench](https://github.com/frappe/bench) CLI:

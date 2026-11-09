@@ -10,7 +10,7 @@
         <div class="flex items-center justify-between gap-3 sm:gap-6">
 
           <!-- Logo -->
-          <RouterLink to="/" class="flex shrink-0 items-center">
+          <RouterLink to="/home" class="flex shrink-0 items-center">
             <img src="./assets/byn.png" alt="BuyNew Logo" class="h-9 w-auto object-contain sm:h-12" />
           </RouterLink>
 

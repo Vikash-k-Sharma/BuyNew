@@ -20,7 +20,8 @@ const routes = [
     {
         path: '/cart',
         name: 'Cart',
-        component: Cart
+        component: () => import('../views/Cart.vue'),
+        meta: { requiresAuth: true }
     },
     {
         path: '/login',

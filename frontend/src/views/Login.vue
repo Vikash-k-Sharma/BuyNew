@@ -4,7 +4,7 @@ import { useRouter, RouterLink } from 'vue-router'
 
 const router = useRouter()
 
-const email = ref('')
+const username = ref('')
 const password = ref('')
 const showPassword = ref(false)
 const loading = ref(false)
@@ -13,8 +13,8 @@ const error = ref('')
 const login = async () => {
     error.value = ''
 
-    if (!email.value.trim() || !password.value) {
-        error.value = 'Please enter your email and password'
+    if (!username.value.trim() || !password.value) {
+        error.value = 'Please enter your username or email and password'
         return
     }
 
@@ -22,36 +22,79 @@ const login = async () => {
 
     try {
         const csrfToken =
-            document.querySelector('meta[name="csrf-token"]')?.content || ''
+            document.querySelector('meta[name="csrf-token"]')?.content ||
+            window.frappe?.csrf_token ||
+            ''
 
         const response = await fetch('/api/method/login', {
             method: 'POST',
             credentials: 'same-origin',
             headers: {
                 'Content-Type': 'application/json',
-                'X-Frappe-CSRF-Token': csrfToken
+                ...(csrfToken
+                    ? { 'X-Frappe-CSRF-Token': csrfToken }
+                    : {})
             },
             body: JSON.stringify({
-                usr: email.value.trim().toLowerCase(),
+                // Frappe accepts either an email address or a user ID such as
+                // "Administrator". Preserve casing for the user ID.
+                usr: username.value.trim(),
                 pwd: password.value
             })
         })
 
         const data = await response.json()
 
-        if (!response.ok || data.message !== 'Logged In') {
-            throw new Error('Invalid email or password')
+        console.log('Login API Response:', data)
+
+        const loginMessage =
+            typeof data.message === 'string'
+                ? data.message
+                : data.message?.message
+
+        if (!response.ok || loginMessage !== 'Logged In') {
+            throw new Error('Invalid username/email or password')
         }
 
-        await router.push('/home')
+        // Confirm the Frappe session
+        const sessionResponse = await fetch(
+            '/api/method/frappe.auth.get_logged_user',
+            {
+                method: 'GET',
+                credentials: 'same-origin'
+            }
+        )
+
+        const sessionData = await sessionResponse.json()
+
+        if (
+            !sessionResponse.ok ||
+            !sessionData.message ||
+            sessionData.message === 'Guest'
+        ) {
+            throw new Error('Unable to verify login session')
+        }
+
+        // Update Navbar
+        window.dispatchEvent(
+            new Event('buynew-auth-changed')
+        )
+
+        // Go to Home
+        await router.replace('/home')
 
     } catch (err) {
-        error.value = err.message || 'Login failed. Please try again.'
+        console.error('Login Error:', err)
+
+        error.value =
+            err.message || 'Login failed. Please try again.'
+
     } finally {
         loading.value = false
     }
 }
 </script>
+
 
 <template>
     <div class="min-h-screen flex items-center justify-center bg-gray-100">
@@ -86,16 +129,17 @@ const login = async () => {
 
                 <form @submit.prevent="login" class="space-y-6">
 
-                    <!-- Email -->
+                    <!-- Email or username -->
                     <div>
                         <label class="block mb-2 text-sm font-semibold text-gray-700">
-                            Email Address
+                            Email Address or Username
                         </label>
 
                         <div class="relative">
-                            <i class="fas fa-envelope absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                            <i class="fas fa-user absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"></i>
 
-                            <input v-model="email" type="email" placeholder="Enter your email" autocomplete="username"
+                            <input v-model="username" type="text" placeholder="Enter your email or username"
+                                autocomplete="username"
                                 class="w-full rounded-lg border border-gray-300 py-3 pl-11 pr-4 outline-none focus:border-[#82103c] focus:ring-2 focus:ring-blue-100" />
                         </div>
                     </div>

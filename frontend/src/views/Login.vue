@@ -54,12 +54,12 @@ const login = async () => {
 </script>
 
 <template>
-    <div class="min-h-screen flex items-center justify-center bg-gray-100 px-4 py-10">
+    <div class="min-h-screen flex items-center justify-center bg-gray-100">
 
-        <div class="w-full max-w-5xl overflow-hidden rounded-2xl bg-white shadow-xl grid md:grid-cols-2">
+        <div class="w-full max-w-5xl overflow-hidden rounded-2xl bg-white shadow-xl grid md:grid-cols-2 h-[555px]">
 
             <!-- Left Side -->
-            <div class="hidden md:flex flex-col justify-center items-center bg-blue-700 p-12 text-white">
+            <div class="hidden md:flex flex-col justify-center items-center bg-[#82103c] p-12 text-white">
                 <i class="fas fa-shopping-bag text-7xl mb-6"></i>
 
                 <h1 class="text-4xl font-bold mb-4">
@@ -72,7 +72,7 @@ const login = async () => {
             </div>
 
             <!-- Right Side -->
-            <div class="p-8 sm:p-12">
+            <div class="p-8 sm:p-10">
 
                 <div class="mb-8">
                     <h2 class="text-3xl font-bold text-gray-800">
@@ -96,7 +96,7 @@ const login = async () => {
                             <i class="fas fa-envelope absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"></i>
 
                             <input v-model="email" type="email" placeholder="Enter your email" autocomplete="username"
-                                class="w-full rounded-lg border border-gray-300 py-3 pl-11 pr-4 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" />
+                                class="w-full rounded-lg border border-gray-300 py-3 pl-11 pr-4 outline-none focus:border-[#82103c] focus:ring-2 focus:ring-blue-100" />
                         </div>
                     </div>
 
@@ -111,7 +111,7 @@ const login = async () => {
 
                             <input v-model="password" :type="showPassword ? 'text' : 'password'"
                                 placeholder="Enter your password" autocomplete="current-password"
-                                class="w-full rounded-lg border border-gray-300 py-3 pl-11 pr-12 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" />
+                                class="w-full rounded-lg border border-gray-300 py-3 pl-11 pr-12 outline-none focus:border-[#82103c] focus:ring-2 focus:ring-blue-100" />
 
                             <button type="button" @click="showPassword = !showPassword"
                                 class="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-blue-600">
@@ -134,7 +134,7 @@ const login = async () => {
 
                     <!-- Login Button -->
                     <button type="submit" :disabled="loading"
-                        class="w-full rounded-lg bg-blue-600 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60">
+                        class="w-full rounded-lg bg-[#82103c] py-3 font-semibold text-white transition hover:bg-[#6b0b30] disabled:cursor-not-allowed disabled:opacity-60">
                         <i v-if="loading" class="fas fa-spinner fa-spin mr-2"></i>
                         {{ loading ? 'Logging in...' : 'Login' }}
                     </button>
@@ -149,7 +149,7 @@ const login = async () => {
                 </p>
 
                 <div class="mt-8 text-center">
-                    <RouterLink to="/" class="text-sm text-blue-600 hover:underline">
+                    <RouterLink to="/" class="text-sm text-[#82103c] hover:underline">
                         <i class="fas fa-arrow-left mr-1"></i>
                         Back to Home
                     </RouterLink>

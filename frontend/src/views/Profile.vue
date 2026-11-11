@@ -16,64 +16,82 @@ const user = ref({
 
 const primaryColor = '#82103c'
 
+const getCsrfToken = () => (
+    document.querySelector('meta[name="csrf-token"]')?.content ||
+    window.frappe?.csrf_token ||
+    ''
+)
+
+const readApiResponse = async (response) => {
+    try {
+        return await response.json()
+    } catch {
+        return {}
+    }
+}
+
+const getApiErrorMessage = (result, fallback) => {
+    if (result?._server_messages) {
+        try {
+            const messages = JSON.parse(result._server_messages)
+                .map(message => JSON.parse(message).message)
+                .filter(Boolean)
+
+            if (messages.length) return messages.join(', ')
+        } catch (err) {
+            console.error('Server message parse error:', err)
+        }
+    }
+
+    if (typeof result?.message === 'string' && result.message.trim()) {
+        return result.message
+    }
+
+    if (typeof result?.message?.message === 'string') {
+        return result.message.message
+    }
+
+    return fallback
+}
+
 // Fetch logged-in user
 const getProfile = async () => {
     loading.value = true
     error.value = ''
 
     try {
-        // Get logged-in user email
-        const loginResponse = await fetch(
-            '/api/method/frappe.auth.get_logged_user',
-            {
-                credentials: 'same-origin'
-            }
-        )
-
-        const loginData = await loginResponse.json()
-        const email = loginData.message
-
-        if (!loginResponse.ok || !email || email === 'Guest') {
-            router.replace('/login')
-            return
-        }
-
-        // Get user profile details
         const response = await fetch(
-            '/api/method/frappe.client.get_value',
+            '/api/method/buy_new.api.get_current_user_profile',
             {
-                method: 'POST',
+                method: 'GET',
                 credentials: 'same-origin',
                 headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    doctype: 'User',
-                    filters: {
-                        name: email
-                    },
-                    fieldname: [
-                        'name',
-                        'full_name',
-                        'email',
-                        'mobile_no',
-                        'user_image'
-                    ]
-                })
+                    Accept: 'application/json'
+                }
             }
         )
 
-        const result = await response.json()
+        const result = await readApiResponse(response)
 
-        if (!response.ok || !result.message) {
-            throw new Error('Unable to load profile details')
+        if (!response.ok || result.exc || result.exception) {
+            const errorDetails = `${result.exc_type || ''} ${result.exception || ''} ${result.message || ''}`
+            if ([401, 403].includes(response.status) || /PermissionError|Please login/i.test(errorDetails)) {
+                await router.replace('/login')
+                return
+            }
+
+            throw new Error(getApiErrorMessage(result, 'Unable to load profile details'))
+        }
+
+        if (!result.message || typeof result.message !== 'object') {
+            throw new Error('The profile API returned no user details')
         }
 
         user.value = result.message
 
     } catch (err) {
         console.error('Profile Error:', err)
-        error.value = 'Unable to load your profile. Please try again.'
+        error.value = err.message || 'Unable to load your profile. Please try again.'
     } finally {
         loading.value = false
     }
@@ -84,11 +102,16 @@ const logout = async () => {
     try {
         const response = await fetch('/api/method/logout', {
             method: 'POST',
-            credentials: 'same-origin'
+            credentials: 'same-origin',
+            headers: {
+                'X-Frappe-CSRF-Token': getCsrfToken()
+            }
         })
 
-        if (!response.ok) {
-            throw new Error('Logout failed')
+        const result = await readApiResponse(response)
+
+        if (!response.ok || result.exc || result.exception) {
+            throw new Error(getApiErrorMessage(result, 'Logout failed'))
         }
 
         window.dispatchEvent(
@@ -99,7 +122,7 @@ const logout = async () => {
 
     } catch (err) {
         console.error('Logout Error:', err)
-        error.value = 'Unable to logout. Please try again.'
+        error.value = err.message || 'Unable to logout. Please try again.'
     }
 }
 

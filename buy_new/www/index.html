@@ -8,6 +8,9 @@
     <link rel="icon" href="/assets/buy_new/frontend/assets/byn-D2vjdmof.png" type="image/png">
     <title>{{ title }}</title>
 
+    <script>window.frappe = window.frappe || {};</script>
+    <!-- csrf_token -->
+
     {% for css in css_files %}
     <link rel="stylesheet" href="/assets/buy_new/frontend/{{ css }}">
     {% endfor %}

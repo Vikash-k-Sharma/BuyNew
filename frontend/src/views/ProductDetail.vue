@@ -38,9 +38,15 @@
                 <!-- Product Image -->
                 <div class="flex flex-col gap-3">
 
-                    <div class="flex h-[300px] items-center justify-center rounded-lg bg-gray-50 sm:h-[450px]">
-                        <img v-if="product.product_image" :src="product.product_image" :alt="product.products_name"
-                            class="h-full w-full object-contain p-4" />
+                    <div class="relative flex h-[300px] items-center justify-center overflow-hidden rounded-lg bg-gray-50 sm:h-[450px]">
+                        <div v-if="product.product_image && !product.imageLoaded && !product.imageFailed"
+                            class="absolute inset-0 animate-pulse bg-gray-200" role="status"
+                            aria-label="Loading product image"></div>
+
+                        <img v-if="product.product_image && !product.imageFailed" :src="product.product_image"
+                            :alt="product.products_name"
+                            :class="['h-full w-full object-contain p-4 transition-opacity duration-200', product.imageLoaded ? 'opacity-100' : 'opacity-0']"
+                            @load="product.imageLoaded = true" @error="product.imageFailed = true" />
 
                         <i v-else class="fas fa-image text-6xl text-gray-300"></i>
                     </div>
@@ -49,6 +55,11 @@
                         class="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-5 py-3 font-semibold text-red-700">
                         <i class="fas fa-circle-exclamation"></i>
                         Out of Stock
+                    </div>
+                    <div v-else-if="isCartLimitReached(product)" role="status"
+                        class="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-5 py-3 font-semibold text-amber-800">
+                        <i class="fas fa-circle-check"></i>
+                        Maximum quantity (10) in cart
                     </div>
                     <button v-else @click="addToCart" :disabled="adding"
                         class="w-full rounded-lg bg-[#82103c] px-5 py-3 font-semibold text-white transition hover:bg-[#6b0b30] disabled:opacity-50">
@@ -187,6 +198,7 @@ const adding = ref(false)
 const isOutOfStock = (item) =>
     Number(item?.stock_quantity) <= 0 ||
     String(item?.stock_status || '').toLowerCase().includes('out of stock')
+const isCartLimitReached = (item) => Number(item?.cart_quantity || 0) >= 10
 
 const showToast = ref(false)
 const toastMessage = ref('')
@@ -273,6 +285,9 @@ const getProduct = async () => {
             throw new Error('Product not found.')
         }
 
+        product.value.imageLoaded = false
+        product.value.imageFailed = false
+
     } catch (err) {
         console.error('Product Detail Error:', err)
         error.value = err.message || 'Unable to load product.'
@@ -288,13 +303,17 @@ const addToCart = async () => {
         notify('Out of Stock', 'error')
         return
     }
+    if (isCartLimitReached(product.value)) {
+        notify('You can add up to 10 of this product', 'error')
+        return
+    }
 
     adding.value = true
 
     try {
         // CHECK LOGIN
         const sessionResponse = await fetch(
-            '/api/method/frappe.auth.get_logged_user',
+            '/api/method/buy_new.api.get_session_user',
             {
                 credentials: 'same-origin'
             }
@@ -329,11 +348,22 @@ const addToCart = async () => {
         )
 
         const result = await readResponse(response)
+        const cartResult = result.message || {}
 
-        if (!response.ok || result.exc || result.exception) {
-            throw new Error('Unable to add product to cart.')
+        if (cartResult.limit_reached) {
+            product.value.cart_quantity = Number(cartResult.quantity) || 10
+            notify(cartResult.message || 'You can add up to 10 of this product', 'error')
+            return
         }
 
+        if (!response.ok || result.exc || result.exception || cartResult.success === false) {
+            throw new Error(
+                cartResult.message || result.exception || 'Unable to add product to cart.'
+            )
+        }
+
+        product.value.cart_quantity = Number(cartResult.quantity) || Number(product.value.cart_quantity || 0) + 1
+        window.dispatchEvent(new Event('buynew-cart-updated'))
         notify('Product added to cart successfully!')
 
     } catch (err) {

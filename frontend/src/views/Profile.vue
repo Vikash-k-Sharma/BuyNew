@@ -270,18 +270,6 @@ onMounted(() => {
 
                     </div>
 
-                    <!-- Logout -->
-                    <div class="mt-8 border-t border-gray-100 pt-6">
-
-                        <button @click="logout"
-                            class="flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3 font-semibold text-white transition hover:opacity-90 sm:w-auto"
-                            :style="{ backgroundColor: primaryColor }">
-                            <i class="fas fa-sign-out-alt"></i>
-                            Logout
-                        </button>
-
-                    </div>
-
                 </div>
 
             </div>

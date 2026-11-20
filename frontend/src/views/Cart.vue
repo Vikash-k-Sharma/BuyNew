@@ -431,6 +431,7 @@ const changeQuantity = async (item, quantity) => {
         }
 
         item.quantity = quantity
+        window.dispatchEvent(new Event('buynew-cart-updated'))
         notify('Cart quantity updated')
 
     } catch (err) {
@@ -477,6 +478,7 @@ const removeItem = async (item) => {
             product => product.name !== item.name
         )
 
+        window.dispatchEvent(new Event('buynew-cart-updated'))
         notify('Product removed from cart')
 
     } catch (err) {

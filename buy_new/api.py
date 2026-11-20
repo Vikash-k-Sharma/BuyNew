@@ -1,6 +1,9 @@
 
 import re
+from urllib.parse import quote, urlparse
+
 import frappe
+import requests
 from frappe.utils import cint
 from frappe.utils.password import update_password
 
@@ -21,30 +24,144 @@ PRODUCT_DISPLAY_FIELDS = (
 )
 
 CART_DOCTYPE = "BuyNew Cart Item"
+CUSTOMER_ROLE = "BuyNew Customer"
+
+
+def _get_user_cart_quantities():
+    user = frappe.session.user
+
+    if not user or user == "Guest":
+        return {}
+
+    return {
+        item.product: cint(item.quantity)
+        for item in frappe.get_all(
+            CART_DOCTYPE,
+            filters={"user": user},
+            fields=["product", "quantity"]
+        )
+    }
 
 
 # GET ADS
 
+AD_IMAGE_HOST = "rukminim2.flixcart.com"
+MAX_AD_IMAGE_BYTES = 8 * 1024 * 1024
+ALLOWED_AD_IMAGE_TYPES = {
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/gif",
+    "image/avif"
+}
+
+
 @frappe.whitelist(allow_guest=True)
 def get_ads():
-
-    return frappe.get_list(
+    ads = frappe.get_all(
         "Ad Img",
         fields=["name", "ad_img"],
         order_by="creation asc",
         page_length=100
     )
 
+    for ad in ads:
+        image_url = ad.ad_img or ""
+
+        if urlparse(image_url).hostname == AD_IMAGE_HOST:
+            ad.ad_img = (
+                f"/api/method/buy_new.api.get_ad_image"
+                f"?name={quote(ad.name, safe='')}"
+            )
+
+    return ads
+
+
+@frappe.whitelist(allow_guest=True)
+def get_ad_image(name):
+    image_url = frappe.db.get_value("Ad Img", name, "ad_img")
+    parsed_url = urlparse(image_url or "")
+
+    if parsed_url.scheme != "https" or parsed_url.hostname != AD_IMAGE_HOST:
+        frappe.throw(
+            "Advertisement image URL is not allowed.",
+            frappe.PermissionError
+        )
+
+    try:
+        with requests.get(
+            image_url,
+            timeout=(5, 15),
+            stream=True
+        ) as upstream:
+            upstream.raise_for_status()
+
+            content_type = upstream.headers.get(
+                "Content-Type", ""
+            ).split(";", 1)[0].lower()
+
+            if content_type not in ALLOWED_AD_IMAGE_TYPES:
+                frappe.throw(
+                    "Advertisement URL did not return an image.",
+                    frappe.ValidationError
+                )
+
+            content_length = int(
+                upstream.headers.get("Content-Length", 0) or 0
+            )
+
+            if content_length > MAX_AD_IMAGE_BYTES:
+                frappe.throw(
+                    "Advertisement image is too large.",
+                    frappe.ValidationError
+                )
+
+            image_content = bytearray()
+
+            for chunk in upstream.iter_content(chunk_size=64 * 1024):
+                image_content.extend(chunk)
+
+                if len(image_content) > MAX_AD_IMAGE_BYTES:
+                    frappe.throw(
+                        "Advertisement image is too large.",
+                        frappe.ValidationError
+                    )
+
+    except requests.RequestException:
+        frappe.throw(
+            "Could not load advertisement image.",
+            frappe.ValidationError
+        )
+
+    extension = {
+        "image/jpeg": "jpg",
+        "image/png": "png",
+        "image/webp": "webp",
+        "image/gif": "gif",
+        "image/avif": "avif",
+    }[content_type]
+
+    frappe.response.update({
+        "type": "download",
+        "filename": f"advertisement.{extension}",
+        "content_type": content_type,
+        "display_content_as": "inline",
+        "filecontent": bytes(image_content),
+    })
+
+    frappe.local.response_headers["Cache-Control"] = "public, max-age=86400"
+
 
 # GET PRODUCTS
 
 @frappe.whitelist(allow_guest=True)
 def get_products():
-
-    # Only ask the database for fields present in the installed DocType. This
-    # keeps this public endpoint safe if optional product fields are changed.
     meta = frappe.get_meta("Products")
-    fields = ["name"] + [field for field in PRODUCT_DISPLAY_FIELDS if meta.has_field(field)]
+
+    fields = ["name"] + [
+        field for field in PRODUCT_DISPLAY_FIELDS
+        if meta.has_field(field)
+    ]
 
     products = frappe.get_all(
         "Products",
@@ -53,25 +170,49 @@ def get_products():
         order_by="creation desc"
     )
 
-    # Keep a stable response shape for the existing Vue product cards.
+    cart_quantities = _get_user_cart_quantities()
+
     for product in products:
         for field in PRODUCT_DISPLAY_FIELDS:
             product.setdefault(field, None)
+
+        product["cart_quantity"] = cart_quantities.get(product.name, 0)
 
     return products
 
 
 # REGISTER CUSTOMER
 
-@frappe.whitelist(allow_guest=True)
-def register_customer(first_name, email, password):
-
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def register_customer(
+    first_name,
+    email,
+    password,
+    confirm_password,
+    last_name="",
+    profile_image=""
+):
     first_name = (first_name or "").strip()
+    last_name = (last_name or "").strip()
     email = (email or "").strip().lower()
     password = password or ""
+    confirm_password = confirm_password or ""
+    profile_image = (profile_image or "").strip()
 
     if not first_name:
-        frappe.throw("Please enter your name")
+        frappe.throw("Please enter your first name")
+
+    if not email:
+        frappe.throw("Please enter your email address")
+
+    if not password:
+        frappe.throw("Please enter your password")
+
+    if not confirm_password:
+        frappe.throw("Please confirm your password")
+
+    if not profile_image:
+        frappe.throw("Please upload your profile photo")
 
     if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
         frappe.throw("Please enter a valid email address")
@@ -79,47 +220,118 @@ def register_customer(first_name, email, password):
     if len(password) < 8:
         frappe.throw("Password must be at least 8 characters")
 
+    if len(password) > 512:
+        frappe.throw("Password is too long")
+
+    if password != confirm_password:
+        frappe.throw("Passwords do not match")
+
     if frappe.db.exists("User", email):
         frappe.throw("This email is already registered")
 
+    if not frappe.db.exists("Role", CUSTOMER_ROLE):
+        frappe.throw(
+            "BuyNew Customer role does not exist. Please create the role first."
+        )
+
+    # Validate uploaded profile image
+    if not profile_image.startswith("/files/"):
+        frappe.throw("Invalid profile image")
+
+    uploaded_files = frappe.get_all(
+        "File",
+        filters={
+            "file_url": profile_image,
+            "is_private": 0
+        },
+        fields=[
+            "name",
+            "file_url",
+            "content_type",
+            "file_size",
+            "owner"
+        ],
+        limit_page_length=1
+    )
+
+    if not uploaded_files:
+        frappe.throw("Profile image not found. Please upload again.")
+
+    image_file = uploaded_files[0]
+
+    if image_file.owner != frappe.session.user:
+        frappe.throw("Invalid profile image upload")
+
+    if (image_file.content_type or "").lower() not in {
+        "image/jpeg",
+        "image/png",
+        "image/gif"
+    }:
+        frappe.throw("Only JPG, PNG and GIF images are allowed")
+
+    if cint(image_file.file_size) > 5 * 1024 * 1024:
+        frappe.throw("Profile image must be less than 5 MB")
+
+    # Create customer account
     user = frappe.get_doc({
         "doctype": "User",
         "email": email,
         "first_name": first_name,
+        "last_name": last_name,
+        "user_image": image_file.file_url,
         "enabled": 1,
         "user_type": "Website User",
-        "send_welcome_email": 0
+        "send_welcome_email": 0,
+        "roles": [{"role": CUSTOMER_ROLE}]
     })
 
+    user.flags.no_welcome_mail = True
     user.insert(ignore_permissions=True)
 
-    update_password(email, password)
+    update_password(user.name, password)
+    frappe.local.login_manager.login_as(user.name)
 
     return {
         "success": True,
+        "logged_in": True,
         "message": "Account created successfully",
-        "email": email
+        "user": {
+            "email": user.name,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "user_image": user.user_image,
+            "role": CUSTOMER_ROLE
+        }
     }
 
 
 # CHECK LOGIN
 
 def check_cart_user():
-
     user = frappe.session.user
 
     if not user or user == "Guest":
-        frappe.throw("Please login to continue", frappe.PermissionError)
+        frappe.throw(
+            "Please login to continue",
+            frappe.PermissionError
+        )
 
     return user
+
+
+# CURRENT SESSION USER
+
+@frappe.whitelist(allow_guest=True)
+def get_session_user():
+    return frappe.session.user or "Guest"
 
 
 # CURRENT USER PROFILE
 
 @frappe.whitelist()
 def get_current_user_profile():
-
     user = check_cart_user()
+
     profile = frappe.db.get_value(
         "User",
         user,
@@ -128,7 +340,10 @@ def get_current_user_profile():
     )
 
     if not profile:
-        frappe.throw("User profile not found", frappe.DoesNotExistError)
+        frappe.throw(
+            "User profile not found",
+            frappe.DoesNotExistError
+        )
 
     return profile
 
@@ -137,10 +352,9 @@ def get_current_user_profile():
 
 @frappe.whitelist()
 def add_to_cart(product):
-
     user = check_cart_user()
-
     product = (product or "").strip()
+
     if not product:
         frappe.throw("Product is required")
 
@@ -149,7 +363,10 @@ def add_to_cart(product):
 
     item = frappe.get_doc("Products", product)
 
-    if cint(item.stock_quantity) <= 0 or "out of stock" in (item.stock_status or "").lower():
+    if (
+        cint(item.stock_quantity) <= 0
+        or "out of stock" in (item.stock_status or "").lower()
+    ):
         frappe.throw("Out of Stock")
 
     existing = frappe.db.get_value(
@@ -162,21 +379,21 @@ def add_to_cart(product):
     )
 
     if existing:
-
-        cart_item = frappe.get_doc(
-            CART_DOCTYPE,
-            existing
-        )
-
+        cart_item = frappe.get_doc(CART_DOCTYPE, existing)
         current_quantity = cint(cart_item.quantity)
+
         if current_quantity >= 10:
-            frappe.throw("You can add up to 10 of this product")
+            return {
+                "success": False,
+                "limit_reached": True,
+                "message": "You can add up to 10 of this product",
+                "quantity": current_quantity
+            }
 
         cart_item.quantity = current_quantity + 1
         cart_item.save(ignore_permissions=True)
 
     else:
-
         cart_item = frappe.get_doc({
             "doctype": CART_DOCTYPE,
             "user": user,
@@ -200,14 +417,11 @@ def add_to_cart(product):
 
 @frappe.whitelist()
 def get_cart():
-
     user = check_cart_user()
 
     return frappe.get_all(
         CART_DOCTYPE,
-        filters={
-            "user": user
-        },
+        filters={"user": user},
         fields=[
             "name",
             "user",
@@ -225,9 +439,7 @@ def get_cart():
 
 @frappe.whitelist()
 def update_cart_quantity(cart_item, quantity):
-
     user = check_cart_user()
-
     quantity = cint(quantity)
 
     if quantity < 1 or quantity > 10:
@@ -238,9 +450,13 @@ def update_cart_quantity(cart_item, quantity):
 
     owned_item = frappe.db.get_value(
         CART_DOCTYPE,
-        {"name": cart_item, "user": user},
+        {
+            "name": cart_item,
+            "user": user
+        },
         "name"
     )
+
     if not owned_item:
         frappe.throw("Cart item not found")
 
@@ -259,7 +475,6 @@ def update_cart_quantity(cart_item, quantity):
 
 @frappe.whitelist()
 def remove_from_cart(cart_item):
-
     user = check_cart_user()
 
     if not cart_item:
@@ -267,9 +482,13 @@ def remove_from_cart(cart_item):
 
     owned_item = frappe.db.get_value(
         CART_DOCTYPE,
-        {"name": cart_item, "user": user},
+        {
+            "name": cart_item,
+            "user": user
+        },
         "name"
     )
+
     if not owned_item:
         frappe.throw("Cart item not found")
 
@@ -283,11 +502,12 @@ def remove_from_cart(cart_item):
         "success": True,
         "message": "Product removed from cart"
     }
+
+
 # GET PRODUCT
 
 @frappe.whitelist(allow_guest=True)
 def get_product(product_name):
-
     if not frappe.db.exists("Products", product_name):
         frappe.throw("Product not found")
 
@@ -306,5 +526,193 @@ def get_product(product_name):
         "mrp": product.mrp,
         "discount_percentage": product.discount_percentage,
         "stock_quantity": product.stock_quantity,
-        "stock_status": product.stock_status
+        "stock_status": product.stock_status,
+        "cart_quantity": _get_user_cart_quantities().get(product.name, 0)
+    }
+
+
+# CHECKOUT DATA
+
+@frappe.whitelist()
+def get_checkout_data():
+    if frappe.session.user == "Guest":
+        frappe.throw("Please login first")
+
+    user = frappe.session.user
+
+    cart_items = frappe.get_all(
+        "BuyNew Cart Item",
+        filters={"user": user},
+        fields=[
+            "name",
+            "product",
+            "product_name",
+            "product_image",
+            "selling_price",
+            "quantity"
+        ]
+    )
+
+    items = []
+    subtotal = 0
+
+    for item in cart_items:
+        price = float(item.selling_price or 0)
+        quantity = int(item.quantity or 0)
+        amount = price * quantity
+
+        items.append({
+            "cart_item": item.name,
+            "product": item.product,
+            "product_name": item.product_name,
+            "product_image": item.product_image,
+            "selling_price": price,
+            "quantity": quantity,
+            "amount": amount
+        })
+
+        subtotal += amount
+
+    return {
+        "items": items,
+        "subtotal": subtotal,
+        "delivery_charge": 0 if subtotal >= 499 else 40,
+        "grand_total": subtotal + (0 if subtotal >= 499 else 40)
+    }
+
+
+# PLACE ORDER
+
+@frappe.whitelist()
+def place_order(
+    customer_name,
+    phone,
+    address,
+    city,
+    state,
+    pincode,
+    payment_method
+):
+    if frappe.session.user == "Guest":
+        frappe.throw("Please login first")
+
+    user = frappe.session.user
+
+    allowed_methods = ["COD", "UPI", "Card", "Net Banking"]
+
+    if payment_method not in allowed_methods:
+        frappe.throw("Invalid payment method")
+
+    if not all([
+        customer_name,
+        phone,
+        address,
+        city,
+        state,
+        pincode
+    ]):
+        frappe.throw("Please fill all delivery details")
+
+    cart_items = frappe.get_all(
+        "BuyNew Cart Item",
+        filters={"user": user},
+        fields=[
+            "name",
+            "product",
+            "product_name",
+            "product_image",
+            "selling_price",
+            "quantity"
+        ]
+    )
+
+    if not cart_items:
+        frappe.throw("Your cart is empty")
+
+    order_items = []
+    subtotal = 0
+
+    for item in cart_items:
+        quantity = int(item.quantity or 0)
+        price = float(item.selling_price or 0)
+
+        if quantity <= 0:
+            frappe.throw(f"Invalid quantity for {item.product_name}")
+
+        product = frappe.get_doc("Products", item.product)
+        available_stock = int(product.stock_quantity or 0)
+
+        if available_stock < quantity:
+            frappe.throw(
+                f"Only {available_stock} quantity available for {item.product_name}"
+            )
+
+        amount = price * quantity
+        subtotal += amount
+
+        order_items.append({
+            "product": item.product,
+            "product_name": item.product_name,
+            "product_image": item.product_image,
+            "selling_price": price,
+            "quantity": quantity,
+            "amount": amount
+        })
+
+    delivery_charge = 0 if subtotal >= 499 else 40
+    grand_total = subtotal + delivery_charge
+
+    # Demo payment status
+    if payment_method == "COD":
+        payment_status = "Pending"
+    else:
+        payment_status = "Paid (Demo)"
+
+    order = frappe.get_doc({
+        "doctype": "BuyNew Order",
+        "customer": user,
+        "customer_name": customer_name,
+        "email": user,
+        "phone": phone,
+        "address": address,
+        "city": city,
+        "state": state,
+        "pincode": pincode,
+        "payment_method": payment_method,
+        "payment_status": payment_status,
+        "order_status": "Confirmed",
+        "subtotal": subtotal,
+        "delivery_charge": delivery_charge,
+        "grand_total": grand_total,
+        "items": order_items
+    })
+
+    order.insert(ignore_permissions=True)
+
+    # Update product stock
+    for item in cart_items:
+        product = frappe.get_doc("Products", item.product)
+
+        product.stock_quantity = (
+            int(product.stock_quantity or 0) - int(item.quantity or 0)
+        )
+
+        product.save(ignore_permissions=True)
+
+    # Clear customer cart
+    for item in cart_items:
+        frappe.delete_doc(
+            "BuyNew Cart Item",
+            item.name,
+            ignore_permissions=True
+        )
+
+    frappe.db.commit()
+
+    return {
+        "success": True,
+        "order_id": order.name,
+        "payment_method": payment_method,
+        "payment_status": payment_status,
+        "grand_total": grand_total
     }

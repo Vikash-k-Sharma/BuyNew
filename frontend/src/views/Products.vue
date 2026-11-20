@@ -39,10 +39,16 @@
                     lg:items-start lg:gap-5 lg:px-6 lg:py-6">
 
                     <!-- Product Image -->
-                    <div @click="openProduct(product)" class="flex h-36 w-[38%] shrink-0 cursor-pointer items-center justify-center
-                        lg:h-[190px] lg:w-full lg:bg-gray-50">
-                        <img v-if="product.product_image" :src="product.product_image" :alt="product.products_name"
-                            loading="lazy" class="h-full w-full object-contain" />
+                    <div @click="openProduct(product)" class="relative flex h-36 w-[38%] shrink-0 cursor-pointer items-center justify-center
+                        overflow-hidden bg-gray-50 lg:h-[190px] lg:w-full">
+                        <div v-if="product.product_image && !product.imageLoaded && !product.imageFailed"
+                            class="absolute inset-0 animate-pulse bg-gray-200" role="status"
+                            aria-label="Loading product image"></div>
+
+                        <img v-if="product.product_image && !product.imageFailed" :src="product.product_image"
+                            :alt="product.products_name" loading="lazy"
+                            :class="['h-full w-full object-contain transition-opacity duration-200', product.imageLoaded ? 'opacity-100' : 'opacity-0']"
+                            @load="product.imageLoaded = true" @error="product.imageFailed = true" />
 
                         <i v-else class="fas fa-image text-4xl text-gray-300"></i>
                     </div>
@@ -116,6 +122,11 @@
                             <i class="fas fa-circle-exclamation"></i>
                             Out of Stock
                         </div>
+                        <div v-else-if="isCartLimitReached(product)" role="status"
+                            class="mt-3 flex w-full items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm font-semibold text-amber-800 lg:hidden">
+                            <i class="fas fa-circle-check"></i>
+                            Maximum quantity (10) in cart
+                        </div>
                         <button v-else type="button" @click="addToCart(product)"
                             :disabled="addingProduct === product.name"
                             class="mt-3 w-full rounded-lg bg-[#82103c] px-3 py-2.5 text-sm font-semibold text-white transition hover:bg-[#6b0b30] active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 lg:hidden">
@@ -154,6 +165,11 @@
                             class="mt-4 flex w-full items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
                             <i class="fas fa-circle-exclamation"></i>
                             Out of Stock
+                        </div>
+                        <div v-else-if="isCartLimitReached(product)" role="status"
+                            class="mt-4 flex w-full items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+                            <i class="fas fa-circle-check"></i>
+                            Maximum quantity (10) in cart
                         </div>
                         <button v-else type="button" @click="addToCart(product)"
                             :disabled="addingProduct === product.name"
@@ -211,6 +227,7 @@ const products = ref([])
 const isOutOfStock = (product) =>
     Number(product?.stock_quantity) <= 0 ||
     String(product?.stock_status || '').toLowerCase().includes('out of stock')
+const isCartLimitReached = (product) => Number(product?.cart_quantity || 0) >= 10
 
 const searchQuery = computed(() =>
     typeof route.query.search === 'string' ? route.query.search : ''
@@ -355,10 +372,12 @@ const getProducts = async () => {
         }
 
         products.value = Array.isArray(result.message)
-            ? result.message
+            ? result.message.map(product => ({
+                ...product,
+                imageLoaded: false,
+                imageFailed: false
+            }))
             : []
-
-        console.log('Products:', products.value)
 
     } catch (err) {
         console.error('Product Error:', err)
@@ -375,6 +394,11 @@ const addToCart = async (product) => {
         return
     }
 
+    if (isCartLimitReached(product)) {
+        notify('You can add up to 10 of this product', 'error')
+        return
+    }
+
     if (addingProduct.value) return
 
     addingProduct.value = product.name
@@ -382,7 +406,7 @@ const addToCart = async (product) => {
     try {
         // CHECK LOGIN
         const sessionResponse = await fetch(
-            '/api/method/frappe.auth.get_logged_user',
+            '/api/method/buy_new.api.get_session_user',
             {
                 credentials: 'same-origin'
             }
@@ -417,21 +441,23 @@ const addToCart = async (product) => {
         )
 
         const result = await readApiResponse(response)
+        const cartResult = result.message || {}
 
-        if (!response.ok || result.exc || result.exception) {
-            console.error('ADD TO CART FAILED:', {
-                status: response.status,
-                response: result
-            })
+        if (cartResult.limit_reached) {
+            product.cart_quantity = Number(cartResult.quantity) || 10
+            notify(cartResult.message || 'You can add up to 10 of this product', 'error')
+            return
+        }
 
+        if (!response.ok || result.exc || result.exception || cartResult.success === false) {
             throw new Error(
                 getApiErrorMessage(result, 'Unable to add product')
             )
         }
 
+        product.cart_quantity = Number(cartResult.quantity) || Number(product.cart_quantity || 0) + 1
+        window.dispatchEvent(new Event('buynew-cart-updated'))
         notify(`${product.products_name} added to cart!`)
-
-        console.log('Cart Added Successfully:', result)
 
     } catch (err) {
         console.error('Cart Error:', err)

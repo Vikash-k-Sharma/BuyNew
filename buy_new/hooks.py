@@ -11,15 +11,19 @@ app_license = "mit"
 # required_apps = []
 
 # Each item in the list will be shown as an app in the apps page
-# add_to_apps_screen = [
-# 	{
-# 		"name": "buy_new",
-# 		"logo": "/assets/buy_new/logo.png",
-# 		"title": "Buy New",
-# 		"route": "/buy_new",
-# 		"has_permission": "buy_new.api.permission.has_app_permission",
-# 	}
-# ]
+
+app_logo_url = "/assets/buy_new/images/buynew-logo.png"
+
+add_to_apps_screen = [
+    {
+        "name": "buy_new",
+        "logo": "/assets/buy_new/images/buynew-logo.png",
+        "title": "BuyNew",
+        "route": "/desk/buy-new",
+        "sequence_id": 10,
+    }
+]
+
 
 # The dock, the rail down the left of the desk, is a document rather than a hook. Author it in
 # Manage Dock on a developer-mode site and press Export to App, and it is written to
@@ -291,6 +295,10 @@ website_route_rules = [
     },
     {
         "from_route": "/register",
+        "to_route": "index"
+    },
+    {
+        "from_route": "/profilepage",
         "to_route": "index"
     },
     {

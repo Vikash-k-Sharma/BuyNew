@@ -4,9 +4,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css" />
-    <link rel="icon" href="/assets/buy_new/frontend/assets/byn-D2vjdmof.png" type="image/png">
+    <link rel="icon" href="/assets/buy_new/images/buynew-logo.webp" type="image/webp">
     <title>{{ title }}</title>
+
+    {% if preload_image %}
+    <link rel="preload" as="image" href="{{ preload_image }}" fetchpriority="high">
+    {% endif %}
 
     <script>window.frappe = window.frappe || {};</script>
     <!-- csrf_token -->

@@ -7,6 +7,7 @@ const Products = () => import('../views/Products.vue')
 const Login = () => import('../views/Login.vue')
 const Profile = () => import('../views/Profile.vue')
 const Register = () => import('../views/Register.vue')
+const Wishlist = () => import('../views/Wishlist.vue')
 const ProductDetail = () => import('../views/ProductDetail.vue')
 const Cart = () => import('../views/Cart.vue')
 const Checkout = () => import('../views/Checkout.vue')
@@ -43,6 +44,14 @@ const routes = [
         path: '/register',
         name: 'Register',
         component: Register
+    },
+    {
+        path: '/wishlist',
+        name: 'Wishlist',
+        component: Wishlist,
+        meta: {
+            requiresAuth: true
+        }
     },
     {
         path: '/checkout',

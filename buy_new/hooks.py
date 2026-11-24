@@ -12,12 +12,12 @@ app_license = "mit"
 
 # Each item in the list will be shown as an app in the apps page
 
-app_logo_url = "/assets/buy_new/images/buynew-logo.png"
+app_logo_url = "/assets/buy_new/images/buynew-logo.webp"
 
 add_to_apps_screen = [
     {
         "name": "buy_new",
-        "logo": "/assets/buy_new/images/buynew-logo.png",
+        "logo": "/assets/buy_new/images/buynew-logo.webp",
         "title": "BuyNew",
         "route": "/desk/buy-new",
         "sequence_id": 10,
@@ -298,11 +298,23 @@ website_route_rules = [
         "to_route": "index"
     },
     {
+        "from_route": "/wishlist",
+        "to_route": "index"
+    },
+    {
         "from_route": "/profilepage",
         "to_route": "index"
     },
     {
         "from_route": "/checkout",
+        "to_route": "index"
+    },
+    {
+        "from_route": "/order-success",
+        "to_route": "index"
+    },
+    {
+        "from_route": "/product/<product_id>",
         "to_route": "index"
     },
     {

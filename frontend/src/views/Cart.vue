@@ -496,18 +496,26 @@ const removeItem = async (item) => {
 
 const saveForLater = async (item) => {
     try {
-        const saved = JSON.parse(
-            localStorage.getItem('buynew_saved_items') || '[]'
+        const response = await fetch(
+            '/api/method/buy_new.api.add_to_wishlist',
+            {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Frappe-CSRF-Token': getCsrfToken()
+                },
+                body: JSON.stringify({ product: item.product })
+            }
         )
 
-        if (!saved.some(product => product.product === item.product)) {
-            saved.push(item)
+        const result = await readApiResponse(response)
+        if (!response.ok || result.exc || result.exception) {
+            if (await redirectGuestIfNeeded(response, result)) return
+            throw new Error(getApiErrorMessage(result, 'Unable to save item to wishlist'))
         }
 
-        localStorage.setItem(
-            'buynew_saved_items',
-            JSON.stringify(saved)
-        )
+        window.dispatchEvent(new Event('buynew-wishlist-updated'))
 
         await removeItem(item)
 

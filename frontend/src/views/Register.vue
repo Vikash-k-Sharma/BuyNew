@@ -68,12 +68,53 @@ const removeProfileImage = () => {
 }
 
 // Get CSRF token
-const getCsrfToken = () => {
-    return (
+const getCsrfToken = async () => {
+    const existingToken = (
         document.querySelector('meta[name="csrf-token"]')?.content ||
         window.frappe?.csrf_token ||
         ''
     )
+
+    if (existingToken) return existingToken
+
+    const response = await fetch('/api/method/buy_new.api.get_csrf_token', {
+        credentials: 'same-origin',
+        headers: { Accept: 'application/json' }
+    })
+    const data = await response.json().catch(() => ({}))
+    const token = data.message
+
+    if (!response.ok || typeof token !== 'string' || !token) {
+        throw new Error('Unable to start a secure upload. Please refresh the page and try again.')
+    }
+
+    window.frappe = window.frappe || {}
+    window.frappe.csrf_token = token
+
+    return token
+}
+
+const getServerError = (data) => {
+    if (typeof data.message?.error === 'string') return data.message.error
+    if (typeof data.message === 'string') return data.message
+
+    try {
+        const messages = JSON.parse(data._server_messages || '[]')
+        const message = messages
+            .map((entry) => JSON.parse(entry).message)
+            .filter(Boolean)
+            .at(-1)
+
+        if (message) {
+            const container = document.createElement('div')
+            container.innerHTML = message
+            return container.textContent?.trim() || ''
+        }
+    } catch {
+        // Use the fallback message when Frappe returned no readable server message.
+    }
+
+    return ''
 }
 
 // Upload profile image
@@ -87,10 +128,10 @@ const uploadProfileImage = async () => {
     formData.append('file', profileImage.value)
     formData.append('is_private', '0')
 
-    const csrfToken = getCsrfToken()
+    const csrfToken = await getCsrfToken()
 
     const response = await fetch(
-        '/api/method/upload_file',
+        '/api/method/buy_new.api.upload_profile_image',
         {
             method: 'POST',
             credentials: 'same-origin',
@@ -104,7 +145,7 @@ const uploadProfileImage = async () => {
         }
     )
 
-    const data = await response.json()
+    const data = await response.json().catch(() => ({}))
 
     if (
         !response.ok ||
@@ -112,7 +153,7 @@ const uploadProfileImage = async () => {
         !data.message?.file_url
     ) {
         throw new Error(
-            data.message?.error ||
+            getServerError(data) ||
             'Unable to upload profile image. Please try again.'
         )
     }
@@ -160,7 +201,7 @@ const register = async () => {
         const profileImageUrl = await uploadProfileImage()
 
         // Register customer
-        const csrfToken = getCsrfToken()
+        const csrfToken = await getCsrfToken()
 
         const response = await fetch(
             '/api/method/buy_new.api.register_customer',
@@ -323,40 +364,6 @@ onUnmounted(() => {
 
                 <!-- Register Form -->
                 <form @submit.prevent="register" class="space-y-4">
-
-                    <!-- First Name and Last Name -->
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-
-                        <div>
-                            <label class="block mb-1.5 text-sm font-semibold text-gray-700">
-                                First Name *
-                            </label>
-
-                            <div class="relative">
-                                <i class="fas fa-user absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"></i>
-
-                                <input v-model="first_name" type="text" placeholder="Enter first name"
-                                    autocomplete="given-name" maxlength="140" required :disabled="loading"
-                                    class="w-full rounded-lg border border-gray-300 py-3 pl-10 pr-3 text-sm outline-none transition focus:border-[#82103c] focus:ring-2 focus:ring-pink-100" />
-                            </div>
-                        </div>
-
-                        <div>
-                            <label class="block mb-1.5 text-sm font-semibold text-gray-700">
-                                Last Name
-                            </label>
-
-                            <div class="relative">
-                                <i class="fas fa-user absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"></i>
-
-                                <input v-model="last_name" type="text" placeholder="Enter last name"
-                                    autocomplete="family-name" maxlength="140" :disabled="loading"
-                                    class="w-full rounded-lg border border-gray-300 py-3 pl-10 pr-3 text-sm outline-none transition focus:border-[#82103c] focus:ring-2 focus:ring-pink-100" />
-                            </div>
-                        </div>
-
-                    </div>
-
                     <!-- Profile Photo -->
                     <div>
                         <label class="block mb-2 text-sm font-semibold text-gray-700">
@@ -394,6 +401,38 @@ onUnmounted(() => {
                             </div>
 
                         </div>
+                    </div>
+                    <!-- First Name and Last Name -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+
+                        <div>
+                            <label class="block mb-1.5 text-sm font-semibold text-gray-700">
+                                First Name *
+                            </label>
+
+                            <div class="relative">
+                                <i class="fas fa-user absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"></i>
+
+                                <input v-model="first_name" type="text" placeholder="Enter first name"
+                                    autocomplete="given-name" maxlength="140" required :disabled="loading"
+                                    class="w-full rounded-lg border border-gray-300 py-3 pl-10 pr-3 text-sm outline-none transition focus:border-[#82103c] focus:ring-2 focus:ring-pink-100" />
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block mb-1.5 text-sm font-semibold text-gray-700">
+                                Last Name
+                            </label>
+
+                            <div class="relative">
+                                <i class="fas fa-user absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"></i>
+
+                                <input v-model="last_name" type="text" placeholder="Enter last name"
+                                    autocomplete="family-name" maxlength="140" :disabled="loading"
+                                    class="w-full rounded-lg border border-gray-300 py-3 pl-10 pr-3 text-sm outline-none transition focus:border-[#82103c] focus:ring-2 focus:ring-pink-100" />
+                            </div>
+                        </div>
+
                     </div>
 
                     <!-- Email -->

@@ -1,9 +1,12 @@
 
+import io
+import mimetypes
 import re
 from urllib.parse import quote, urlparse
 
 import frappe
 import requests
+from PIL import Image
 from frappe.utils import cint
 from frappe.utils.password import update_password
 
@@ -25,6 +28,31 @@ PRODUCT_DISPLAY_FIELDS = (
 
 CART_DOCTYPE = "BuyNew Cart Item"
 CUSTOMER_ROLE = "BuyNew Customer"
+MAX_PROFILE_IMAGE_SIZE = 5 * 1024 * 1024
+MAX_PRODUCT_IMAGE_SIZE = 8 * 1024 * 1024
+PROFILE_IMAGE_EXTENSIONS = {
+    "JPEG": "jpg",
+    "PNG": "png",
+    "GIF": "gif",
+}
+PRODUCT_IMAGE_TYPES = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+    "image/gif": "gif",
+    "image/avif": "avif",
+}
+
+
+def _get_product_image_url(product_name, image_url):
+    """Route private catalog images through the public product image endpoint."""
+    if urlparse(image_url or "").path.startswith("/private/files/"):
+        return (
+            "/api/method/buy_new.api.get_product_image"
+            f"?product_name={quote(product_name, safe='')}"
+        )
+
+    return image_url
 
 
 def _get_user_cart_quantities():
@@ -64,6 +92,8 @@ def get_ads():
         order_by="creation asc",
         page_length=100
     )
+
+    frappe.local.response_headers["Cache-Control"] = "public, max-age=300"
 
     for ad in ads:
         image_url = ad.ad_img or ""
@@ -176,12 +206,157 @@ def get_products():
         for field in PRODUCT_DISPLAY_FIELDS:
             product.setdefault(field, None)
 
+        product.product_image = _get_product_image_url(
+            product.name, product.product_image
+        )
         product["cart_quantity"] = cart_quantities.get(product.name, 0)
 
     return products
 
 
+@frappe.whitelist(allow_guest=True)
+def get_product_image(product_name):
+    """Serve only the private image attached to a public catalog product."""
+    if not frappe.db.exists("Products", product_name):
+        frappe.throw("Product not found", frappe.DoesNotExistError)
+
+    image_url = frappe.db.get_value("Products", product_name, "product_image")
+    if not urlparse(image_url or "").path.startswith("/private/files/"):
+        frappe.throw("Private product image not found", frappe.PermissionError)
+
+    file_name = frappe.db.get_value(
+        "File",
+        {"file_url": image_url, "is_private": 1},
+        "name",
+    )
+    if not file_name:
+        frappe.throw("Product image file not found", frappe.DoesNotExistError)
+
+    image_file = frappe.get_doc("File", file_name)
+    content_type = mimetypes.guess_type(image_file.file_name or image_url)[0]
+    extension = PRODUCT_IMAGE_TYPES.get(content_type)
+    if not extension:
+        frappe.throw(
+            "Product image must be a supported image file",
+            frappe.ValidationError,
+        )
+
+    if cint(image_file.file_size) > MAX_PRODUCT_IMAGE_SIZE:
+        frappe.throw("Product image is too large", frappe.ValidationError)
+
+    image_content = image_file.get_content()
+    if isinstance(image_content, str):
+        image_content = image_content.encode("utf-8")
+
+    if len(image_content) > MAX_PRODUCT_IMAGE_SIZE:
+        frappe.throw("Product image is too large", frappe.ValidationError)
+
+    frappe.response.update({
+        "type": "download",
+        "filename": f"product-image.{extension}",
+        "content_type": content_type,
+        "display_content_as": "inline",
+        "filecontent": image_content,
+    })
+    frappe.local.response_headers["Cache-Control"] = "public, max-age=300"
+
+
 # REGISTER CUSTOMER
+
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+def get_csrf_token():
+    """Return the current session's CSRF token for the standalone Vite frontend."""
+    from frappe.sessions import get_csrf_token as get_session_csrf_token
+
+    return get_session_csrf_token()
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def upload_profile_image():
+    """Upload a validated public profile image before a guest creates an account."""
+    if frappe.session.user != "Guest":
+        frappe.throw("Profile images can only be uploaded during registration")
+
+    uploaded_file = frappe.request.files.get("file")
+    if not uploaded_file:
+        frappe.throw("Please choose a profile image to upload")
+
+    content = uploaded_file.stream.read(MAX_PROFILE_IMAGE_SIZE + 1)
+    if not content:
+        frappe.throw("The selected image is empty")
+    if len(content) > MAX_PROFILE_IMAGE_SIZE:
+        frappe.throw("Profile image must be 5 MB or smaller")
+
+    try:
+        with Image.open(io.BytesIO(content)) as image:
+            image_format = image.format
+            image_width, image_height = image.size
+            image.verify()
+    except Exception:
+        frappe.throw("Please upload a valid JPG, PNG or GIF image")
+
+    extension = PROFILE_IMAGE_EXTENSIONS.get(image_format)
+    if not extension:
+        frappe.throw("Only JPG, PNG and GIF images are allowed")
+    if image_width * image_height > 20_000_000:
+        frappe.throw("Image dimensions are too large")
+
+    file_doc = frappe.get_doc({
+        "doctype": "File",
+        "file_name": f"profile-image.{extension}",
+        "folder": "Home",
+        "is_private": 0,
+        "content": content,
+    })
+    file_doc.insert(ignore_permissions=True)
+
+    return {"file_url": file_doc.file_url}
+
+
+@frappe.whitelist(methods=["POST"])
+def update_current_user_profile_image():
+    """Upload a public profile image and assign it to the signed-in user."""
+    user = frappe.session.user
+    if not user or user == "Guest":
+        frappe.throw("Please login first", frappe.PermissionError)
+
+    uploaded_file = frappe.request.files.get("file")
+    if not uploaded_file:
+        frappe.throw("Please choose a profile image to upload")
+
+    content = uploaded_file.stream.read(MAX_PROFILE_IMAGE_SIZE + 1)
+    if not content:
+        frappe.throw("The selected image is empty")
+    if len(content) > MAX_PROFILE_IMAGE_SIZE:
+        frappe.throw("Profile image must be 5 MB or smaller")
+
+    try:
+        with Image.open(io.BytesIO(content)) as image:
+            image_format = image.format
+            image_width, image_height = image.size
+            image.verify()
+    except Exception:
+        frappe.throw("Please upload a valid JPG, PNG or GIF image")
+
+    extension = PROFILE_IMAGE_EXTENSIONS.get(image_format)
+    if not extension:
+        frappe.throw("Only JPG, PNG and GIF images are allowed")
+    if image_width * image_height > 20_000_000:
+        frappe.throw("Image dimensions are too large")
+
+    file_doc = frappe.get_doc({
+        "doctype": "File",
+        "file_name": f"profile-image-{frappe.generate_hash(length=8)}.{extension}",
+        "folder": "Home",
+        "is_private": 0,
+        "content": content,
+    })
+    file_doc.insert(ignore_permissions=True)
+
+    frappe.db.set_value("User", user, "user_image", file_doc.file_url)
+
+    return {"user_image": file_doc.file_url}
+
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def register_customer(
@@ -242,12 +417,13 @@ def register_customer(
         "File",
         filters={
             "file_url": profile_image,
-            "is_private": 0
+            "is_private": 0,
+            "owner": frappe.session.user,
         },
         fields=[
             "name",
             "file_url",
-            "content_type",
+            "file_name",
             "file_size",
             "owner"
         ],
@@ -262,7 +438,8 @@ def register_customer(
     if image_file.owner != frappe.session.user:
         frappe.throw("Invalid profile image upload")
 
-    if (image_file.content_type or "").lower() not in {
+    content_type = mimetypes.guess_type(image_file.file_name or "")[0]
+    if (content_type or "").lower() not in {
         "image/jpeg",
         "image/png",
         "image/gif"
@@ -419,7 +596,7 @@ def add_to_cart(product):
 def get_cart():
     user = check_cart_user()
 
-    return frappe.get_all(
+    items = frappe.get_all(
         CART_DOCTYPE,
         filters={"user": user},
         fields=[
@@ -433,6 +610,13 @@ def get_cart():
         ],
         order_by="creation desc"
     )
+
+    for item in items:
+        item.product_image = _get_product_image_url(
+            item.product, item.product_image
+        )
+
+    return items
 
 
 # UPDATE CART QUANTITY
@@ -521,7 +705,9 @@ def get_product(product_name):
         "category": product.category,
         "description": product.description,
         "short_description": product.short_description,
-        "product_image": product.product_image,
+        "product_image": _get_product_image_url(
+            product.name, product.product_image
+        ),
         "selling_price": product.selling_price,
         "mrp": product.mrp,
         "discount_percentage": product.discount_percentage,
@@ -565,7 +751,9 @@ def get_checkout_data():
             "cart_item": item.name,
             "product": item.product,
             "product_name": item.product_name,
-            "product_image": item.product_image,
+            "product_image": _get_product_image_url(
+                item.product, item.product_image
+            ),
             "selling_price": price,
             "quantity": quantity,
             "amount": amount
@@ -715,4 +903,124 @@ def place_order(
         "payment_method": payment_method,
         "payment_status": payment_status,
         "grand_total": grand_total
+    }
+
+
+@frappe.whitelist()
+def add_to_wishlist(product):
+
+    user = frappe.session.user
+
+    if user == "Guest":
+        frappe.throw("Please login first")
+
+    if not frappe.db.exists("Products", product):
+        frappe.throw("Product not found")
+
+    existing = frappe.db.exists(
+        "Wishlist Item",
+        {
+            "user": user,
+            "product": product
+        }
+    )
+
+    if existing:
+        return {
+            "success": True,
+            "message": "Already in wishlist"
+        }
+
+    doc = frappe.get_doc({
+        "doctype": "Wishlist Item",
+        "user": user,
+        "product": product
+    })
+
+    doc.insert(ignore_permissions=True)
+
+    return {
+        "success": True,
+        "message": "Added to wishlist"
+    }
+
+
+@frappe.whitelist()
+def get_wishlist():
+
+    user = frappe.session.user
+
+    if user == "Guest":
+        frappe.throw("Please login first")
+
+    wishlist = frappe.get_all(
+        "Wishlist Item",
+        filters={
+            "user": user
+        },
+        fields=[
+            "name",
+            "product",
+            "creation"
+        ],
+        order_by="creation desc"
+    )
+
+    products = []
+
+    for item in wishlist:
+
+        if not frappe.db.exists("Products", item.product):
+            continue
+
+        product = frappe.get_doc(
+            "Products",
+            item.product
+        )
+
+        products.append({
+            "wishlist_id": item.name,
+            "name": product.name,
+            "products_name": product.products_name,
+            "product_image": product.product_image,
+            "selling_price": product.selling_price,
+            "mrp": product.mrp,
+            "category": product.category
+        })
+
+    return products
+
+
+@frappe.whitelist()
+def remove_from_wishlist(product):
+
+    user = frappe.session.user
+
+    if user == "Guest":
+        frappe.throw("Please login first")
+
+    wishlist_id = frappe.db.get_value(
+        "Wishlist Item",
+        {
+            "user": user,
+            "product": product
+        },
+        "name"
+    )
+
+    if not wishlist_id:
+        return {
+            "success": True,
+            "message": "Product not found in wishlist"
+        }
+
+    frappe.delete_doc(
+        "Wishlist Item",
+        wishlist_id,
+        ignore_permissions=True
+    )
+
+    return {
+        "success": True,
+        "message": "Removed from wishlist"
     }

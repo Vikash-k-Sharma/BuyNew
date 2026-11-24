@@ -45,7 +45,7 @@
                     <div v-if="showSuggestions && searchQuery.trim()"
                         class="absolute left-0 right-0 top-full z-[100] mt-1 max-h-[420px] overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-xl">
                         <button v-for="product in searchSuggestions" :key="product.name" type="button"
-                            @mousedown.prevent="selectSuggestion(product)"
+                            @click="selectSuggestion(product)"
                             class="flex w-full items-center gap-4 border-b border-gray-100 px-4 py-3 text-left hover:bg-gray-50">
                             <div class="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-gray-50">
                                 <img v-if="product.product_image" :src="product.product_image"
@@ -81,6 +81,18 @@
 
             <!-- Right Side -->
             <div class="ml-auto flex shrink-0 items-center gap-3 text-white sm:gap-5">
+
+                <!-- Wishlist -->
+                <RouterLink to="/wishlist" aria-label="Wishlist"
+                    class="flex items-center text-white transition hover:text-yellow-300">
+                    <span class="relative">
+                        <i class="far fa-heart text-xl sm:text-2xl"></i>
+                        <span v-if="wishlistCount > 0"
+                            class="absolute -right-2 -top-2 flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-[#FFC900] px-1 text-[10px] font-bold text-black">
+                            {{ wishlistCount }}
+                        </span>
+                    </span>
+                </RouterLink>
 
                 <!-- Cart -->
                 <RouterLink to="/cart" class="flex items-center gap-2 text-white transition hover:text-yellow-300">
@@ -157,25 +169,27 @@
         </div>
 
         <!-- Mobile Search -->
-        <form @submit.prevent="searchProducts" class="px-4 pb-3 md:hidden">
-            <div class="relative flex h-10 overflow-hidden rounded-lg bg-white">
-                <input v-model="searchQuery" type="search" placeholder="Search for products, brands and more..."
-                    autocomplete="off" @focus="showSuggestions = true" @input="showSuggestions = true"
-                    @blur="hideSuggestions"
-                    class="w-full min-w-0 border-none px-3 text-sm text-gray-800 outline-none focus:ring-0" />
+        <form @submit.prevent="searchProducts" class="relative z-[60] px-4 pb-3 md:hidden">
+            <div class="relative">
+                <div class="flex h-10 overflow-hidden rounded-lg bg-white">
+                    <input v-model="searchQuery" type="search" placeholder="Search for products, brands and more..."
+                        autocomplete="off" @focus="showSuggestions = true" @input="showSuggestions = true"
+                        @blur="hideSuggestions"
+                        class="w-full min-w-0 border-none px-3 text-sm text-gray-800 outline-none focus:ring-0" />
 
-                <button type="submit" class="bg-[#FFC900] px-5 text-sm font-bold text-black">
-                    Search
-                </button>
+                    <button type="submit" class="shrink-0 bg-[#FFC900] px-5 text-sm font-bold text-black">
+                        Search
+                    </button>
+                </div>
 
                 <!-- Mobile Suggestions -->
                 <div v-if="showSuggestions && searchQuery.trim()"
-                    class="absolute left-0 right-0 top-full z-[100] mt-1 max-h-[60vh] overflow-y-auto rounded-lg bg-white shadow-xl">
+                    class="absolute left-0 right-0 top-full z-[100] mt-1 max-h-[60vh] overflow-y-auto overscroll-contain rounded-lg border border-gray-200 bg-white shadow-xl">
                     <button v-for="product in searchSuggestions" :key="product.name" type="button"
-                        @mousedown.prevent="selectSuggestion(product)"
+                        @click="selectSuggestion(product)"
                         class="flex w-full items-center gap-3 border-b border-gray-100 p-3 text-left">
                         <img v-if="product.product_image" :src="product.product_image"
-                            class="h-12 w-12 object-contain" />
+                            :alt="product.products_name" class="h-12 w-12 shrink-0 object-contain" />
 
                         <div class="min-w-0">
                             <p class="truncate text-sm font-semibold text-gray-800">
@@ -252,6 +266,7 @@ const profileDropdown = ref(false)
 const profileMenuRef = ref(null)
 
 const cartCount = ref(0)
+const wishlistCount = ref(0)
 
 const showLogoutConfirm = ref(false)
 const isLoggingOut = ref(false)
@@ -307,6 +322,7 @@ const checkLogin = async () => {
 
         if (!isLoggedIn.value) {
             cartCount.value = 0
+            wishlistCount.value = 0
             userProfile.value = null
         }
 
@@ -422,6 +438,7 @@ const searchProducts = () => {
 
 // Select Suggestion
 const selectSuggestion = (product) => {
+    clearTimeout(blurTimer)
     searchQuery.value = product.products_name || ''
     searchProducts()
 }
@@ -582,11 +599,45 @@ const handleAuthChange = async () => {
     await checkLogin()
     await getUserProfile()
     await getCartCount()
+    await updateWishlistCount()
 }
 
 // Update Cart
 const handleCartUpdate = () => {
     getCartCount()
+}
+
+const handleProfileUpdate = () => {
+    getUserProfile()
+}
+
+const updateWishlistCount = async () => {
+    if (!isLoggedIn.value) {
+        wishlistCount.value = 0
+        return
+    }
+
+    try {
+        const response = await fetch(
+            '/api/method/buy_new.api.get_wishlist',
+            {
+                method: 'GET',
+                credentials: 'same-origin',
+                headers: { Accept: 'application/json' }
+            }
+        )
+        const result = await response.json()
+
+        if (!response.ok || result.exc || result.exception) {
+            throw new Error('Unable to fetch wishlist count')
+        }
+
+        wishlistCount.value = Array.isArray(result.message)
+            ? result.message.length
+            : 0
+    } catch (error) {
+        console.error('Wishlist Count Error:', error)
+    }
 }
 
 onMounted(async () => {
@@ -595,6 +646,7 @@ onMounted(async () => {
 
     getSearchProducts()
     getCartCount()
+    updateWishlistCount()
 
     window.addEventListener(
         'buynew-auth-changed',
@@ -604,6 +656,21 @@ onMounted(async () => {
     window.addEventListener(
         'buynew-cart-updated',
         handleCartUpdate
+    )
+
+    window.addEventListener(
+        'buynew-profile-updated',
+        handleProfileUpdate
+    )
+
+    window.addEventListener(
+        'buynew-wishlist-updated',
+        updateWishlistCount
+    )
+
+    window.addEventListener(
+        'storage',
+        updateWishlistCount
     )
 
     document.addEventListener(
@@ -621,6 +688,21 @@ onUnmounted(() => {
     window.removeEventListener(
         'buynew-cart-updated',
         handleCartUpdate
+    )
+
+    window.removeEventListener(
+        'buynew-profile-updated',
+        handleProfileUpdate
+    )
+
+    window.removeEventListener(
+        'buynew-wishlist-updated',
+        updateWishlistCount
+    )
+
+    window.removeEventListener(
+        'storage',
+        updateWishlistCount
     )
 
     document.removeEventListener(

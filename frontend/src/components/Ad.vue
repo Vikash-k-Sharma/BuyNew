@@ -12,6 +12,7 @@
                 <Transition name="ad-fade">
                     <img v-if="currentMainAd?.ad_img" :key="currentMainAd.ad_img" :src="currentMainAd.ad_img"
                         :alt="currentMainAd.name || 'Advertisement'"
+                        fetchpriority="high"
                         :class="['buynew-main-image', { 'is-loaded': mainImageLoadedUrl === currentMainAd.ad_img }]"
                         @load="handleMainImageLoad" @error="handleImageError" />
                 </Transition>
@@ -98,6 +99,7 @@ const preloadNextSlide = () => {
 
     if (imageUrl) {
         const image = new Image()
+        image.fetchPriority = 'low'
         image.src = imageUrl
     }
 }
@@ -142,8 +144,6 @@ const startAutoSlide = () => {
     stopAutoSlide()
 
     if (mainAds.value.length > 1) {
-        preloadNextSlide()
-
         slideTimer = setInterval(() => {
             currentIndex.value =
                 (currentIndex.value + 1) % mainAds.value.length
@@ -155,7 +155,12 @@ const startAutoSlide = () => {
 
 // Main image error
 const handleMainImageLoad = (event) => {
-    mainImageLoadedUrl.value = event.currentTarget.getAttribute('src') || ''
+    const loadedUrl = event.currentTarget.getAttribute('src') || ''
+    mainImageLoadedUrl.value = loadedUrl
+
+    if (loadedUrl === currentMainAd.value?.ad_img) {
+        preloadNextSlide()
+    }
 }
 
 const handleImageError = (event) => {
